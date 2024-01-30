@@ -24,8 +24,9 @@ type Props = {
   handleMarkerPress: (_: MapMarker) => void
   focusedMarker: MapMarker | null
   focusedMarkerRef: React.MutableRefObject<MapMarkerType | null>
-  handleCalloutPress: (_: MapMarker) => void
+  handleCalloutPress: () => void
   alertOnLocationError: () => void
+  waitingToParseDestination: boolean
 }
 
 export default function MapComponent({
@@ -39,6 +40,7 @@ export default function MapComponent({
   focusedMarkerRef,
   handleCalloutPress,
   alertOnLocationError,
+  waitingToParseDestination
 }: Props) {
   const {
     theme: { colors, mode: themeMode },
@@ -147,6 +149,7 @@ export default function MapComponent({
             isFocused={focusedMarker?.username === item.username}
             text={text}
             styles={styles}
+            waitingToParseDestination={waitingToParseDestination}
           />
         ))}
       </MapView>

@@ -11,8 +11,10 @@ import { toastShow } from "../../utils/toast"
 import { useI18nContext } from "@app/i18n/i18n-react"
 import {
   MapMarker,
+  useAccountDefaultWalletLazyQuery,
   useBusinessMapMarkersQuery,
   useRegionQuery,
+  useSendBitcoinDestinationQuery,
 } from "@app/graphql/generated"
 import { check, PERMISSIONS, PermissionStatus, RESULTS } from "react-native-permissions"
 import { gql } from "@apollo/client"
@@ -23,6 +25,16 @@ import { CountryCode } from "libphonenumber-js/mobile"
 import useDeviceLocation from "@app/hooks/use-device-location"
 import MapComponent from "@app/components/map-component"
 import { isIos } from "@app/utils/helper"
+import {
+  DestinationDirection,
+  InvalidDestinationReason,
+  PaymentDestination,
+} from "../send-bitcoin-screen/payment-destination/index.types"
+import { DestinationState } from "../send-bitcoin-screen/send-bitcoin-reducer"
+import { parseDestination } from "../send-bitcoin-screen/payment-destination"
+import { LNURL_DOMAINS } from "@app/config"
+import { logParseDestinationResult } from "@app/utils/analytics"
+import { PaymentType } from "@galoymoney/client"
 
 const EL_ZONTE_COORDS = {
   latitude: 13.496743,
@@ -100,14 +112,39 @@ export const MapScreen: React.FC<Props> = ({ navigation }) => {
     notifyOnNetworkStatusChange: true,
     fetchPolicy: "cache-and-network",
   })
+  const { loading: destinationLoading, data: destinationData } =
+    useSendBitcoinDestinationQuery({
+      fetchPolicy: "cache-and-network",
+      returnPartialData: true,
+      skip: !isAuthed,
+    })
+  const [accountDefaultWalletQuery] = useAccountDefaultWalletLazyQuery({
+    fetchPolicy: "no-cache",
+  })
 
   const focusedMarkerRef = React.useRef<MapMarkerType | null>(null)
+  const parsedDestination = React.useRef<PaymentDestination | null>(null)
+  const parserInterval = React.useRef<NodeJS.Timeout | null>(null)
 
   const [initialLocation, setInitialLocation] = React.useState<Region>()
   const [isRefreshed, setIsRefreshed] = React.useState(false)
   const [focusedMarker, setFocusedMarker] = React.useState<MapMarker | null>(null)
   const [isInitializing, setInitializing] = React.useState(true)
   const [permissionsStatus, setPermissionsStatus] = React.useState<PermissionStatus>()
+  const [waitingToParseDestination, setWaitingToParseDestination] = React.useState(false)
+
+  const wallets = React.useMemo(
+    () => destinationData?.me?.defaultAccount.wallets,
+    [destinationData?.me?.defaultAccount.wallets],
+  )
+  const bitcoinNetwork = React.useMemo(
+    () => destinationData?.globals?.network,
+    [destinationData?.globals?.network],
+  )
+  const contacts = React.useMemo(
+    () => destinationData?.me?.contacts ?? [],
+    [destinationData?.me?.contacts],
+  )
 
   useFocusEffect(() => {
     if (!isRefreshed) {
@@ -151,6 +188,13 @@ export const MapScreen: React.FC<Props> = ({ navigation }) => {
     }
   }, [lastRegionError, alertOnLocationError])
 
+  const clearParserInterval = () => {
+    if (parserInterval.current) {
+      clearInterval(parserInterval.current)
+      parserInterval.current = null
+    }
+  }
+
   // Flow when location permissions are denied
   React.useEffect(() => {
     if (countryCode && lastRegion && !isInitializing && !loading && !initialLocation) {
@@ -188,9 +232,68 @@ export const MapScreen: React.FC<Props> = ({ navigation }) => {
     }
   }, [isInitializing, countryCode, lastRegion, loading, initialLocation])
 
-  const handleCalloutPress = (item: MapMarker) => {
+  // TODO make this cancellable and cancel it whenever user presses a new marker. otherwise this is small memory leak
+  const validateDestination = async (username: string) => {
+    if (!bitcoinNetwork || !wallets || !contacts) {
+      return
+    }
+
+    const destination = await parseDestination({
+      rawInput: username,
+      myWalletIds: wallets.map((wallet) => wallet.id),
+      bitcoinNetwork,
+      lnurlDomains: LNURL_DOMAINS,
+      accountDefaultWalletQuery,
+    })
+    logParseDestinationResult(destination)
+
+    if (destination.valid === false) {
+      const message =
+        destination.invalidReason === InvalidDestinationReason.SelfPayment
+          ? LL.MapScreen.errorSelfAddress()
+          : LL.MapScreen.errorParsingDestination()
+      toastShow({
+        type: "error",
+        message,
+        LL,
+      })
+      return
+    }
+
+    if (destination?.destinationDirection === DestinationDirection.Send) {
+      parsedDestination.current = destination
+    } else {
+      toastShow({
+        type: "error",
+        message: LL.MapScreen.errorParsingDestination(),
+        LL,
+      })
+    }
+  }
+
+  const handleCalloutPress = () => {
     if (isAuthed) {
-      navigation.navigate("sendBitcoinDestination", { username: item.username })
+      // parsedDetination is preloaded. Waits an additional 5s for it to complete, timeout, or be nullified
+      let attempt = 0
+      parserInterval.current = setInterval(() => {
+        if (attempt > 5) {
+          toastShow({
+            type: "error",
+            message: LL.MapScreen.errorParsingDestination(),
+            LL,
+          })
+          clearParserInterval()
+        }
+        if (parsedDestination.current) {
+          navigation.navigate("sendBitcoinDetails", {
+            paymentDestination: parsedDestination.current,
+          })
+          clearParserInterval()
+        } else {
+          setWaitingToParseDestination(true)
+          attempt++
+        }
+      }, 1000)
     } else {
       navigation.navigate("phoneFlow", {
         screen: "phoneLoginInitiate",
@@ -199,17 +302,27 @@ export const MapScreen: React.FC<Props> = ({ navigation }) => {
         },
       })
     }
+    setWaitingToParseDestination(false)
   }
 
   const handleMarkerPress = (item: MapMarker, ref?: MapMarkerType) => {
+    // Reset stuff related to parsed destination
+    clearParserInterval()
+    parsedDestination.current = null
+
+    // Focus
     setFocusedMarker(item)
     if (ref) {
       focusedMarkerRef.current = ref
     }
+
+    // Start preloading the parsed destination
+    validateDestination(item.username) // don't await
   }
 
   const handleMapPress = () => {
     setFocusedMarker(null)
+    parsedDestination.current = null
     focusedMarkerRef.current = null
   }
 
@@ -227,6 +340,7 @@ export const MapScreen: React.FC<Props> = ({ navigation }) => {
           focusedMarkerRef={focusedMarkerRef}
           handleCalloutPress={handleCalloutPress}
           alertOnLocationError={alertOnLocationError}
+          waitingToParseDestination={waitingToParseDestination}
         />
       )}
     </Screen>

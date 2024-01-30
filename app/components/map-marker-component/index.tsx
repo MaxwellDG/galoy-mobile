@@ -5,7 +5,7 @@ import {
   Marker,
 } from "react-native-maps"
 import { Text } from "@rneui/themed"
-import { useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { StyleProp, TextStyle, View, ViewStyle } from "react-native"
 import { isIos } from "@app/utils/helper"
 import { LocalizedString } from "typesafe-i18n"
@@ -21,7 +21,7 @@ type Props = {
   item: MapMarker
   color: string
   handleMarkerPress: (_item: MapMarker, _ref?: MapMarkerType) => void
-  handleCalloutPress: (item: MapMarker) => void
+  handleCalloutPress: () => void
   isFocused: boolean
   styles: {
     customView: StyleProp<ViewStyle>
@@ -30,6 +30,7 @@ type Props = {
     pseudoButton: StyleProp<ViewStyle>
   }
   text: LocalizedString
+  waitingToParseDestination: boolean
 }
 
 export default function MapMarkerComponent({
@@ -40,6 +41,7 @@ export default function MapMarkerComponent({
   isFocused,
   styles,
   text,
+  waitingToParseDestination,
 }: Props) {
   const ref = useRef<MapMarkerType>(null)
 
@@ -48,6 +50,11 @@ export default function MapMarkerComponent({
       ref.current.showCallout()
     }
   }, [isFocused])
+
+  const buttonText = useMemo(
+    () => (waitingToParseDestination ? "Validating..." : text),
+    [waitingToParseDestination, text],
+  )
 
   return (
     <Marker
@@ -60,21 +67,21 @@ export default function MapMarkerComponent({
       }
       stopPropagation
     >
-      <Callout tooltip={true} onPress={() => handleCalloutPress(item)}>
+      <Callout tooltip={true} onPress={handleCalloutPress}>
         {isFocused && (
           <View style={styles.customView}>
             <Text type="h1" style={styles.title} numberOfLines={1} ellipsizeMode="tail">
               {item.mapInfo.title}
             </Text>
             {isIos ? (
-              <CalloutSubview onPress={() => handleCalloutPress(item)}>
+              <CalloutSubview onPress={handleCalloutPress}>
                 <View style={styles.pseudoButton}>
-                  <Text style={styles.text}>{text}</Text>
+                  <Text style={styles.text}>{buttonText}</Text>
                 </View>
               </CalloutSubview>
             ) : (
               <View style={styles.pseudoButton}>
-                <Text style={styles.text}>{text}</Text>
+                <Text style={styles.text}>{buttonText}</Text>
               </View>
             )}
           </View>

@@ -2064,7 +2064,9 @@ const en: BaseTranslation = {
     payBusiness: "Pay this business",
     openSettings: "Open settings",
     title: "Map",
-    error: 'Oops. Something went wrong while getting your location'
+    error: 'Oops. Something went wrong while getting your location',
+    errorSelfAddress: 'This is your lightning address!',
+    errorParsingDestination: 'Invalid lightning address'
   },
   HomeScreen: {
     receive: "Receive",

@@ -6362,6 +6362,14 @@ type RootTranslation = {
 		 * O​o​p​s​.​ ​S​o​m​e​t​h​i​n​g​ ​w​e​n​t​ ​w​r​o​n​g​ ​w​h​i​l​e​ ​g​e​t​t​i​n​g​ ​y​o​u​r​ ​l​o​c​a​t​i​o​n
 		 */
 		error: string
+		/**
+		 * T​h​i​s​ ​i​s​ ​y​o​u​r​ ​l​i​g​h​t​n​i​n​g​ ​a​d​d​r​e​s​s​!
+		 */
+		errorSelfAddress: string
+		/**
+		 * I​n​v​a​l​i​d​ ​l​i​g​h​t​n​i​n​g​ ​a​d​d​r​e​s​s
+		 */
+		errorParsingDestination: string
 	}
 	HomeScreen: {
 		/**
@@ -15161,6 +15169,14 @@ export type TranslationFunctions = {
 		 * Oops. Something went wrong while getting your location
 		 */
 		error: () => LocalizedString
+		/**
+		 * This is your lightning address!
+		 */
+		errorSelfAddress: () => LocalizedString
+		/**
+		 * Invalid lightning address
+		 */
+		errorParsingDestination: () => LocalizedString
 	}
 	HomeScreen: {
 		/**
